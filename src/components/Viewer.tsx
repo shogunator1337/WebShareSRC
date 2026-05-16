@@ -40,20 +40,9 @@ export default function Viewer() {
       }
     };
 
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit("ice-candidate", roomId, event.candidate); // As a viewer, we can just send candidate to broadcaster through signaling... 
-        // Wait, the viewer-joined logic only emits viewer-joined to broadcaster, and broadcaster sends offer to viewerId.
-        // Wait, here `roomId` is the roomId. But the broadcaster is listening to the room but using caller's socket.id.
-        // Let's actually look at the server design.
-      }
-    };
-    
-    // We actually need the viewer to send the ICE candidate TO THE BROADCASTER. 
-    // In server: socket.on("ice-candidate", (targetId, candidate) => socket.to(targetId).emit...)
-    // But how does Viewer know broadcaster's targetId? 
-    // The broadcaster sends an 'offer' with `socket.id` (which is broadcaster's socket.id).
     let broadcasterId: string | null = null;
+    let pendingCandidates: RTCIceCandidateInit[] = [];
+    let isRemoteDescrSet = false;
 
     socket.on("offer", async (senderId, offer) => {
       console.log("Received offer from", senderId);
@@ -62,6 +51,14 @@ export default function Viewer() {
       setStatus("Установка соединения (P2P)...");
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        isRemoteDescrSet = true;
+
+        // Add any pending candidates
+        for (const candidate of pendingCandidates) {
+           await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+        pendingCandidates = [];
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         
@@ -74,10 +71,19 @@ export default function Viewer() {
 
     socket.on("ice-candidate", async (senderId, candidate) => {
       try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        if (isRemoteDescrSet) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } else {
+          pendingCandidates.push(candidate);
+        }
       } catch (err) {
         console.error("Error adding ice candidate", err);
       }
+    });
+
+    socket.on("broadcaster-joined", () => {
+      console.log("Broadcaster joined, requesting offer...");
+      socket.emit("join-viewer", roomId);
     });
 
     // Handle our ICE candidates

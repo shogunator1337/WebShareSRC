@@ -6,7 +6,7 @@ import { Server } from "socket.io";
 
 async function startServer() {
   const app = express();
-  const PORT = 4000;
+  const PORT = 3000;
   
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -22,6 +22,7 @@ async function startServer() {
       socket.join(roomId);
       socket.join(`broadcaster-${roomId}`);
       console.log(`Broadcaster ${socket.id} joined room ${roomId}`);
+      socket.to(roomId).emit("broadcaster-joined");
     });
 
     // Viewer joins room and notifies broadcaster

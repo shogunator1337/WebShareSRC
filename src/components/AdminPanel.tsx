@@ -118,6 +118,9 @@ export default function AdminPanel() {
         </section>
 
         <section className="space-y-4">
+          <div className="flex bg-blue-900/30 border border-blue-800/50 p-4 rounded-xl text-sm text-blue-200">
+            <p><strong>Важно:</strong> Если вы сейчас находитесь в режиме разработки (закрытой ссылке), скопированные ниже URL будут работать только у вас. Чтобы дать доступ ссылке для OBS или зрителям, нажмите кнопку <strong>Share</strong> в AI Studio, откройте публичную версию приложения и копируйте ссылки оттуда!</p>
+          </div>
           <h2 className="text-lg font-semibold text-white">Активные комнаты</h2>
           {rooms.length === 0 ? (
             <div className="text-center py-12 border-2 border-dashed border-neutral-800 rounded-2xl">

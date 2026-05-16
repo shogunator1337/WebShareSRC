@@ -54,12 +54,17 @@ export default function Broadcaster() {
 
     socket.emit("join-broadcaster", roomId);
 
+    let pendingCandidates: { [id: string]: RTCIceCandidateInit[] } = {};
+    let isRemoteDescrSet: { [id: string]: boolean } = {};
+
     socket.on("viewer-joined", async (viewerId) => {
       console.log("Viewer joined", viewerId);
       
       // Create new Peer Connection for this viewer
       const pc = new RTCPeerConnection(configuration);
       pcsRef.current[viewerId] = pc;
+      pendingCandidates[viewerId] = [];
+      isRemoteDescrSet[viewerId] = false;
       
       // Update viewer count
       setViewersCount(Object.keys(pcsRef.current).length);
@@ -92,6 +97,13 @@ export default function Broadcaster() {
       if (pc) {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
+          isRemoteDescrSet[viewerId] = true;
+
+          const queue = pendingCandidates[viewerId] || [];
+          for (const candidate of queue) {
+             await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          }
+          pendingCandidates[viewerId] = [];
         } catch (err) {
           console.error("Failed to set remote description", err);
         }
@@ -102,7 +114,11 @@ export default function Broadcaster() {
       const pc = pcsRef.current[viewerId];
       if (pc) {
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          if (isRemoteDescrSet[viewerId]) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } else {
+            pendingCandidates[viewerId].push(candidate);
+          }
         } catch (err) {
           console.error("Failed to add ICE candidate", err);
         }
