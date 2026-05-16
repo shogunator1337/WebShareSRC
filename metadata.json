@@ -1,0 +1,6 @@
+{
+  "name": "VDO Clone",
+  "description": "Аналог VDONinja для P2P трансляции вебкамеры (OBS browser source совместим)",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": []
+}
