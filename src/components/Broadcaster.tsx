@@ -70,6 +70,10 @@ export default function Broadcaster() {
     socket.on("viewer-joined", async (viewerId) => {
       console.log("Viewer joined", viewerId);
       
+      if (pcsRef.current[viewerId]) {
+         pcsRef.current[viewerId].close();
+      }
+
       // Create new Peer Connection for this viewer
       const pc = new RTCPeerConnection(configuration);
       pcsRef.current[viewerId] = pc;

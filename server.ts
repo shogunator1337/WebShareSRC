@@ -8,6 +8,14 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
   
+  // Allow embedding in iframes
+  app.use((req, res, next) => {
+    res.removeHeader("X-Frame-Options");
+    res.setHeader("Content-Security-Policy", "frame-ancestors *");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    next();
+  });
+
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
@@ -63,7 +71,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
