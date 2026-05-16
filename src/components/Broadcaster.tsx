@@ -23,7 +23,10 @@ export default function Broadcaster() {
   // Configuration for WebRTC
   const configuration = {
     iceServers: [
-      { urls: "stun:stun1.l.google.com:19302" }
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" },
+      { urls: "stun:stun3.l.google.com:19302" },
+      { urls: "stun:stun4.l.google.com:19302" },
     ]
   };
 
@@ -52,7 +55,14 @@ export default function Broadcaster() {
     const socket = io();
     socketRef.current = socket;
 
-    socket.emit("join-broadcaster", roomId);
+    socket.on("connect", () => {
+      console.log("Broadcaster socket connected!");
+      socket.emit("join-broadcaster", roomId);
+    });
+
+    if (socket.connected) {
+      socket.emit("join-broadcaster", roomId);
+    }
 
     let pendingCandidates: { [id: string]: RTCIceCandidateInit[] } = {};
     let isRemoteDescrSet: { [id: string]: boolean } = {};
@@ -177,10 +187,21 @@ export default function Broadcaster() {
 
   useEffect(() => {
     return () => {
-      stream?.getTracks().forEach(track => track.stop());
-      socketRef.current?.disconnect();
+      // Clean up on component unmount
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
       Object.values<RTCPeerConnection>(pcsRef.current).forEach(pc => pc.close());
     };
+  }, []);
+
+  // Separate effect to clean up stream on unmount
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    }
   }, [stream]);
 
   if (!isJoined) {

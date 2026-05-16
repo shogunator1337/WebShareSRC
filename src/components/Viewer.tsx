@@ -15,7 +15,10 @@ export default function Viewer() {
 
   const configuration = {
     iceServers: [
-      { urls: "stun:stun1.l.google.com:19302" }
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" },
+      { urls: "stun:stun3.l.google.com:19302" },
+      { urls: "stun:stun4.l.google.com:19302" },
     ]
   };
 
@@ -23,8 +26,16 @@ export default function Viewer() {
     const socket = io();
     socketRef.current = socket;
 
-    // We join as viewer
-    socket.emit("join-viewer", roomId);
+    // Join room when connected (or reconnected)
+    socket.on("connect", () => {
+      console.log("Socket connected, joining as viewer...");
+      socket.emit("join-viewer", roomId);
+    });
+    
+    // We also emit immediately in case it's already connected (though usually it connects async)
+    if (socket.connected) {
+      socket.emit("join-viewer", roomId);
+    }
     
     // Auto click/interaction is usually needed to autoplay audio, but OBS browser source handles it automatically.
     // So we just try to play when tracks arrive.
@@ -93,7 +104,18 @@ export default function Viewer() {
       }
     };
 
+    pc.oniceconnectionstatechange = () => {
+      console.log("ICE Connection State:", pc.iceConnectionState);
+      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+        setStatus("Подключено");
+      } else if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+        setStatus("Соединение разорвано");
+        setIsPlaying(false);
+      }
+    };
+
     pc.onconnectionstatechange = () => {
+      console.log("Connection State:", pc.connectionState);
       if (pc.connectionState === "connected") {
         setStatus("Подключено");
       } else if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
@@ -108,8 +130,14 @@ export default function Viewer() {
     };
   }, [roomId]);
 
+  const handlePlay = () => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.play().catch(e => console.error("Play failed:", e));
+    }
+  };
+
   return (
-    <div className="w-screen h-screen bg-transparent overflow-hidden relative font-sans">
+    <div className="w-screen h-screen bg-transparent overflow-hidden relative font-sans" onClick={handlePlay}>
       {!isPlaying && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-900 text-white z-10">
            <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
@@ -117,6 +145,14 @@ export default function Viewer() {
         </div>
       )}
       
+      {isPlaying && (
+        <div className="absolute top-4 right-4 z-20 opacity-0 hover:opacity-100 transition-opacity">
+           <button onClick={handlePlay} className="bg-black/50 text-white px-3 py-1 rounded text-xs">
+             Воспроизвести (если заблокировано)
+           </button>
+        </div>
+      )}
+
       <video
         ref={remoteVideoRef}
         autoPlay
