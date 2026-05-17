@@ -1,7 +1,8 @@
+// ... (imports)
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
-import { Camera, CameraOff, Mic, MicOff, Settings, Users } from "lucide-react";
+import { Camera, CameraOff, Mic, MicOff, Settings, Users, MonitorPlay, Code } from "lucide-react";
 
 export default function Broadcaster() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -9,16 +10,17 @@ export default function Broadcaster() {
   
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isJoined, setIsJoined] = useState(false);
-  const [peerConnections, setPeerConnections] = useState<{ [id: string]: RTCPeerConnection }>({});
   const [viewersCount, setViewersCount] = useState(0);
 
   const socketRef = useRef<Socket | null>(null);
-  
-  // Track our viewers' RTCPeerConnections
   const pcsRef = useRef<{ [id: string]: RTCPeerConnection }>({});
 
   const [micEnabled, setMicEnabled] = useState(true);
   const [camEnabled, setCamEnabled] = useState(true);
+
+  // Settings
+  const [selectedQuality, setSelectedQuality] = useState<number>(720);
+  const [selectedCodec, setSelectedCodec] = useState<string>("default");
 
   // Configuration for WebRTC
   const configuration = {
@@ -30,10 +32,20 @@ export default function Broadcaster() {
     ]
   };
 
+  const getQualityConstraints = () => {
+    switch(selectedQuality) {
+      case 1080: return { width: { ideal: 1920 }, height: { ideal: 1080 } };
+      case 720: return { width: { ideal: 1280 }, height: { ideal: 720 } };
+      case 480: return { width: { ideal: 854 }, height: { ideal: 480 } };
+      case 360: return { width: { ideal: 640 }, height: { ideal: 360 } };
+      default: return { width: { ideal: 1280 }, height: { ideal: 720 } };
+    }
+  };
+
   const startStream = async () => {
     try {
       const localStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720, frameRate: 30 },
+        video: { ...getQualityConstraints(), frameRate: { ideal: 30 } },
         audio: { echoCancellation: true, noiseSuppression: true }
       });
       
@@ -85,7 +97,24 @@ export default function Broadcaster() {
 
       // Add local stream tracks to PC
       localStream.getTracks().forEach(track => {
-        pc.addTrack(track, localStream);
+        const sender = pc.addTrack(track, localStream);
+        
+        // Try to set Codec Preferences if requested
+        if (track.kind === 'video' && selectedCodec !== 'default' && 'getCapabilities' in RTCRtpSender) {
+           try {
+             const capabilities = RTCRtpSender.getCapabilities('video');
+             if (capabilities && capabilities.codecs) {
+                // Find all codecs of the selected type
+                const matchedCodecs = capabilities.codecs.filter(c => c.mimeType.toLowerCase().includes(selectedCodec.toLowerCase()));
+                const otherCodecs = capabilities.codecs.filter(c => !c.mimeType.toLowerCase().includes(selectedCodec.toLowerCase()));
+                if (matchedCodecs.length > 0 && typeof sender.setCodecPreferences === 'function') {
+                   sender.setCodecPreferences([...matchedCodecs, ...otherCodecs]);
+                }
+             }
+           } catch (e) {
+             console.warn("Codec preferences not supported or failed", e);
+           }
+        }
       });
 
       // Handle ICE candidates
@@ -168,9 +197,6 @@ export default function Broadcaster() {
     }
   };
 
-  // We have a small issue: Socket disconnected from server won't broadcast "viewer-disconnected" unless we add it to the server.
-  // Actually, WebRTC ICE connection state change can tell us if they disconnected.
-  
   useEffect(() => {
     const interval = setInterval(() => {
         // Cleanup closed connections
@@ -211,12 +237,57 @@ export default function Broadcaster() {
   if (!isJoined) {
     return (
       <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-4 font-sans text-white">
-         <div className="max-w-md w-full bg-neutral-900 p-8 rounded-3xl text-center border border-neutral-800 shadow-2xl">
-            <div className="w-20 h-20 bg-blue-600/20 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Camera className="w-10 h-10" />
+         <div className="max-w-md w-full bg-neutral-900 p-8 rounded-3xl border border-neutral-800 shadow-2xl">
+            <div className="w-16 h-16 bg-blue-600/20 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Settings className="w-8 h-8" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight mb-2">Начать трансляцию</h1>
-            <p className="text-neutral-400 mb-8 text-sm">Ваша камера и микрофон будут транслироваться напрямую зрителям (P2P).</p>
+            <h1 className="text-2xl font-bold tracking-tight mb-2 text-center">Настройки стрима</h1>
+            <p className="text-neutral-400 mb-6 text-sm text-center">Выберите качество и кодек перед началом трансляции (применится к камере и P2P-соединениям).</p>
+            
+            <div className="space-y-6 mb-8">
+               {/* Quality Selection */}
+               <div>
+                  <label className="flex items-center space-x-2 text-sm font-medium text-neutral-300 mb-2">
+                    <MonitorPlay className="w-4 h-4" />
+                    <span>Разрешение видео</span>
+                  </label>
+                  <select 
+                    value={selectedQuality}
+                    onChange={(e) => setSelectedQuality(Number(e.target.value))}
+                    className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl p-3 focus:outline-none focus:border-blue-500 transition-colors"
+                  >
+                    <option value={1080}>1080p (FHD) — Высокая четкость</option>
+                    <option value={720}>720p (HD) — Баланс (Рекомендуется)</option>
+                    <option value={480}>480p (SD) — Экономия трафика</option>
+                    <option value={360}>360p — Минимальное качество</option>
+                  </select>
+               </div>
+
+               {/* Codec Selection */}
+               <div>
+                  <label className="flex items-center space-x-2 text-sm font-medium text-neutral-300 mb-2">
+                    <Code className="w-4 h-4" />
+                    <span>Видеокодек</span>
+                  </label>
+                  <select 
+                    value={selectedCodec}
+                    onChange={(e) => setSelectedCodec(e.target.value)}
+                    className="w-full bg-neutral-800 border border-neutral-700 text-white rounded-xl p-3 focus:outline-none focus:border-blue-500 transition-colors mb-2"
+                  >
+                    <option value="default">По умолчанию (Автоматически)</option>
+                    <option value="h264">H.264 (Большая стабильность и совместимость)</option>
+                    <option value="vp8">VP8 (Низкая задержка, стандарт WebRTC)</option>
+                    <option value="vp9">VP9 (Лучше качество сжатия, выше нагрузка на CPU)</option>
+                  </select>
+                  <div className="text-xs text-neutral-500 leading-relaxed">
+                    {selectedCodec === 'default' && "Оставляет выбор кодека на усмотрение браузеров. Обычно это лучший вариант."}
+                    {selectedCodec === 'h264' && "H.264 аппаратно ускоряется почти на всех устройствах. Отличный выбор для снижения нагрузки и повышения стабильности."}
+                    {selectedCodec === 'vp8' && "VP8 отлично подходит для реал-тайм видео с минимальной задержкой. Базовый и надежный."}
+                    {selectedCodec === 'vp9' && "VP9 дает лучшую картинку при том же битрейте, но может сильнее греть процессор."}
+                  </div>
+               </div>
+            </div>
+
             <button 
               onClick={startStream}
               className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-4 px-6 rounded-2xl transition-all shadow-lg hover:shadow-blue-500/20 active:scale-[0.98]"
